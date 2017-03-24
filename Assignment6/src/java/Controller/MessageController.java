@@ -16,6 +16,7 @@ import java.util.logging.Logger;
 import javax.enterprise.context.ApplicationScoped;
 import javax.json.JsonObject;
 import Entities.Message;
+import java.sql.*;
 
 /**
  *
@@ -23,128 +24,167 @@ import Entities.Message;
  */
 @ApplicationScoped
 public class MessageController {
+
     private List<Message> messages = new ArrayList<>();
     DateFormat df = new SimpleDateFormat("EEE MMM dd H:m:s zzz yyyy");
-    
-    
+
     /**
      * initialize the messages list
      */
-    public MessageController(){
+    public MessageController() {
         try {
-            messages.add(new Message(1, "title1", "contents1", "author1", df.parse("Fri Mar 17 15:50:07 EDT 2017")));
-            messages.add(new Message(2, "title2", "contents2", "author2", df.parse("Sat Mar 18 15:50:07 EDT 2017")));
-            messages.add(new Message(3, "title3", "contents3", "author3", df.parse("Sun Mar 19 15:50:07 EDT 2017")));
-        } catch (ParseException ex) {
+            refresh();
+        } catch (SQLException ex) {
             Logger.getLogger(MessageController.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public void refresh() throws SQLException {
+        try {
+            java.util.Date date = new java.util.Date();
+            Timestamp timestamp;
+            messages = new ArrayList<>();
+            Connection conn = getConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery("SELECT * FROM messages");
+            while (rs.next()) {
+                timestamp = rs.getTimestamp("senttime");
+                if(timestamp != null) date = new java.util.Date(timestamp.getTime());
+                Message m = new Message(
+                        rs.getInt("id"),
+                        rs.getString("title"),
+                        rs.getString("contents"),
+                        rs.getString("author"),
+                        date
+                );
+                messages.add(m);
+            }
+        } catch (SQLException ex) {
+            Logger.getLogger(MessageController.class.getName()).log(Level.SEVERE, null, ex);
+            messages = new ArrayList<>();
         }
     }
 
     public List<Message> getMessages() {
         return messages;
     }
-    
+
     /**
      * get a Message object by a specific id
+     *
      * @param id
      * @return Message
      */
-    public Message getMessageById(int id){
-        for (Message m : messages){
-            if (m.getId() == id)
-                return m;
+    public JsonObject getMessageById(int id) {
+        for (Message m : messages) {
+            if (m.getId() == id) {
+                return m.toJSON();
+            }
         }
         return null;
     }
-    
+
     /**
      * delete the Message specified by id
+     *
      * @param id
      * @return "200 OK" when it is deleted successfully
      */
-    public String deleteMessageById(int id){
-        for (Message m : messages){
-            if(m.getId() == id){
-                messages.remove(m);
-                return "200 OK";
-            }
+    public String deleteMessageById(int id) {
+        String result = "";
+        try {
+            Connection conn = getConnection();
+            String query = "DELETE FROM messages WHERE id = ?";
+            PreparedStatement pstmt = conn.prepareStatement(query);
+            pstmt.setInt(1, id);
+            pstmt.executeUpdate();
+            refresh();
+            result = "200 OK";
+        } catch (SQLException ex) {
+            Logger.getLogger(MessageController.class.getName()).log(Level.SEVERE, null, ex);
         }
-        return "Delete Failed";
+        return result;
     }
-    
+
     /**
      * update the Message specified by id
+     *
      * @param id
      * @param j
      * @return the updated Message
      */
-    public Message updateMessageById(int id, JsonObject j){
-        String senttime = "";
-        for (Message m : messages){
-            if(m.getId() == id){
-                try {
-                    // assign new values to the specific Message
-                    m.setTitle(j.getString("title"));
-                    m.setContents(j.getString("contents"));
-                    m.setAuthor(j.getString("author"));
-                    senttime = j.getString("senttime");
-                    m.setSenttime(df.parse(senttime));
-                    return m;
-                } catch (ParseException ex) {
-                    Logger.getLogger(MessageController.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
+    public JsonObject updateMessageById(int id, JsonObject j) throws ParseException {
+        Date d = new Date();
+        if (j.containsKey("senttime")){
+            d = df.parse(j.getString("senttime"));
         }
-        return null;
-    }
-    
-    /**
-     * add a new Message into the Message List
-     * @param j
-     * @return the Message List of all Message
-     */
-    public List<Message> addMessage(JsonObject j){
-        String senttime = "";
+        java.sql.Timestamp sql = new java.sql.Timestamp(d.getTime());
         try {
-            // set the id of the new Message
-            int id = messages.size() + 1;
-            // get the new values from JSON
-            String title = j.getString("title");
-            String contents  = j.getString("contents");
-            String author = j.getString("author");
-            // if senttime is updated by user, then set the new senttime to the Message
-            if (j.containsKey("senttime")){
-                senttime = j.getString("senttime");
-                messages.add(new Message(id, title, contents, author, df.parse(senttime)));
-            }
-            else {
-                // if senttime is not included in JSON, then set the current Datetime as the senttime
-                messages.add(new Message(id, title, contents, author, new Date()));
-            }
-        } catch (ParseException ex) {
+            Connection conn = getConnection();
+            String query = "UPDATE messages SET title = ?, contents = ?, author = ?, senttime = ? WHERE id = ?";
+            PreparedStatement pstmt = conn.prepareStatement(query);
+            pstmt.setString(1, j.getString("title"));
+            pstmt.setString(2, j.getString("contents"));
+            pstmt.setString(3, j.getString("author"));
+            pstmt.setTimestamp(4, sql);
+            pstmt.setInt(5, id);
+            pstmt.executeUpdate();
+            refresh();
+        } catch (SQLException ex) {
             Logger.getLogger(MessageController.class.getName()).log(Level.SEVERE, null, ex);
         }
-        
+        return getMessageById(id);
+
+    }
+
+    /**
+     * add a new Message into the Message List
+     *
+     * @param j
+     * @return the Message List of all Message
+     * @throws java.text.ParseException
+     */
+    public List<Message> addMessage(JsonObject j) throws ParseException {
+        Date senttime = new Date();
+        if (j.containsKey("senttime")) {
+            senttime = df.parse(j.getString("senttime"));
+        }
+        java.sql.Timestamp sql = new java.sql.Timestamp(senttime.getTime());
+        try {
+            Connection conn = getConnection();
+            String query = "INSERT INTO messages(title, contents, author, senttime) VALUES (?, ?, ?, ?)";
+            PreparedStatement pstmt = conn.prepareStatement(query);
+            pstmt.setString(1, j.getString("title"));
+            pstmt.setString(2, j.getString("contents"));
+            pstmt.setString(3, j.getString("author"));
+            pstmt.setTimestamp(4, sql);
+            pstmt.executeUpdate();
+            refresh();
+        } catch (SQLException ex) {
+            Logger.getLogger(MessageController.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
         return messages;
     }
-    
+
     /**
      * get a List of Message in range of a specific period
+     *
      * @param startDate
      * @param endDate
      * @return a List of Message
      */
-    public List<Message> getMessagesByDate(String startDate, String endDate){
+    public List<Message> getMessagesByDate(String startDate, String endDate) {
         // declare a new List to store Message in a specific period
         List<Message> messagesByDate = new ArrayList<>();
         // loop through each Message in the Message List to compare with the specific date
-        for (Message m : messages){
+        for (Message m : messages) {
             try {
                 // add the Message to the new List if it matched the specific date period
-                if (m.getSenttime().after(df.parse(startDate)) 
+                if (m.getSenttime().after(df.parse(startDate))
                         && m.getSenttime().before(df.parse(endDate))
                         || m.getSenttime().equals(df.parse(startDate))
-                        || m.getSenttime().equals(df.parse(endDate))){
+                        || m.getSenttime().equals(df.parse(endDate))) {
                     messagesByDate.add(m);
                 }
             } catch (ParseException ex) {
@@ -152,6 +192,18 @@ public class MessageController {
             }
         }
         return messagesByDate;
+    }
+
+    // connect to database
+    public static Connection getConnection() throws SQLException {
+        try {
+            Class.forName("com.mysql.jdbc.Driver");
+            Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/blog", "root", "");
+            return conn;
+        } catch (ClassNotFoundException ex) {
+            Logger.getLogger(MessageController.class.getName()).log(Level.SEVERE, null, ex);
+            return null;
+        }
     }
 
 }

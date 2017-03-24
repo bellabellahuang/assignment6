@@ -37,6 +37,14 @@ public class Message {
         this.senttime = senttime;
     }
     
+    public Message(int id, String title, String contents, String author) {
+        this.id = id;
+        this.title = title;
+        this.contents = contents;
+        this.author = author;
+        this.senttime = new Date();
+    }
+    
     /**
      * get each attribute value from JSON object
      * @param json 

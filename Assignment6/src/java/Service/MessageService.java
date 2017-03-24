@@ -21,6 +21,7 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.Response;
 import Entities.Message;
+import java.text.ParseException;
 
 /**
  *
@@ -46,7 +47,7 @@ public class MessageService {
     @Path("/{id}")
     @Produces("application/json")
     public JsonObject getMessageById(@PathParam("id") int id){
-        return messagesList.getMessageById(id).toJSON();
+        return messagesList.getMessageById(id);
     }
     
     @GET
@@ -64,7 +65,7 @@ public class MessageService {
     @POST
     @Consumes("application/json")
     @Produces("application/json")
-    public Response addMessages(JsonObject j){
+    public Response addMessages(JsonObject j) throws ParseException{
         messagesList.addMessage(j);
         return getAllMessages();
     }
@@ -72,8 +73,8 @@ public class MessageService {
     @PUT
     @Path("/{id}")
     @Consumes("application/json")
-    public JsonObject updateMessageById(@PathParam("id") int id, JsonObject j){
-        return messagesList.updateMessageById(id, j).toJSON();
+    public JsonObject updateMessageById(@PathParam("id") int id, JsonObject j) throws ParseException{
+        return messagesList.updateMessageById(id, j);
     }
     
     @DELETE
