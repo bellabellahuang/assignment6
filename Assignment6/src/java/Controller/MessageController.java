@@ -17,6 +17,10 @@ import javax.enterprise.context.ApplicationScoped;
 import javax.json.JsonObject;
 import Entities.Message;
 import java.sql.*;
+import javax.json.Json;
+import javax.json.JsonArray;
+import javax.json.JsonArrayBuilder;
+import javax.websocket.Session;
 
 /**
  *
@@ -26,6 +30,7 @@ import java.sql.*;
 public class MessageController {
 
     private List<Message> messages = new ArrayList<>();
+    private List<Session> sessions = new ArrayList<>();
     DateFormat df = new SimpleDateFormat("EEE MMM dd H:m:s zzz yyyy");
 
     /**
@@ -67,6 +72,14 @@ public class MessageController {
 
     public List<Message> getMessages() {
         return messages;
+    }
+    
+    public JsonArray getAllJson(){
+        JsonArrayBuilder json = Json.createArrayBuilder();
+        for (Message m : messages) {
+            json.add(m.toJSON());
+        }
+        return json.build();
     }
 
     /**
@@ -205,5 +218,18 @@ public class MessageController {
             return null;
         }
     }
+    
+    public void addSession(Session s){
+        sessions.add(s);
+    }
+    
+    public List<Session> getSessions(){
+        return sessions;
+    }
+    
+    public boolean containsSession(Session s){
+        return sessions.contains(s);
+    }
+    
 
 }
