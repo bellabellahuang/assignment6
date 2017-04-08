@@ -64,14 +64,24 @@ public class MessageServer {
                 RemoteEndpoint.Basic basic = s.getBasicRemote();
                 basic.sendText(j.toString());
             }
-        } 
-
-        // { "getFromTo" : [ "startDate", "endDate" ] } --> should respond with a JSON Array of the Messages between startDate and endDate inclusive
+        } // { "getFromTo" : [ "startDate", "endDate" ] } --> should respond with a JSON Array of the Messages between startDate and endDate inclusive
         else if (json.containsKey("getFromTo")) {
-            json.get("getFromTo");
-        } 
+            String[] array = new String[2];
+            json.values().toArray(array);
+            String startDate = array[0];
+            String endDate = array[1];
 
-        // { "post" : { ... some Message as below without ID ... } } --> should add the Message to the system and echo back the Message to all connected systems
+            List<Message> messages = messageCtrl.getMessagesByDate(startDate, endDate);
+            JsonArrayBuilder arr = Json.createArrayBuilder();
+            for (Message m : messages) {
+                arr.add(m.toJSON());
+            }
+            for(Session s : messageCtrl.getSessions()){
+                RemoteEndpoint.Basic basic = s.getBasicRemote();
+                basic.sendText(arr.toString());
+            }
+
+        } // { "post" : { ... some Message as below without ID ... } } --> should add the Message to the system and echo back the Message to all connected systems
         else if (json.containsKey("post")) {
             try {
                 JsonObject post = json.getJsonObject("post");
@@ -83,9 +93,7 @@ public class MessageServer {
             } catch (ParseException ex) {
                 Logger.getLogger(MessageServer.class.getName()).log(Level.SEVERE, null, ex);
             }
-        } 
-
-        // { "put" : { ... some Message as below with ID ... } } --> should edit the Message in the system that matches the given ID and echo back { "ok" : true }
+        } // { "put" : { ... some Message as below with ID ... } } --> should edit the Message in the system that matches the given ID and echo back { "ok" : true }
         else if (json.containsKey("put")) {
             try {
                 JsonObject put = json.getJsonObject("put");
@@ -93,7 +101,7 @@ public class MessageServer {
                 messageCtrl.updateMessageById(id, put);
                 for (Session s : messageCtrl.getSessions()) {
                     RemoteEndpoint.Basic basic = s.getBasicRemote();
-                    basic.sendText("{\"ok:\"true");
+                    basic.sendText("{\"ok:\"true}");
                 }
             } catch (ParseException ex) {
                 Logger.getLogger(MessageServer.class.getName()).log(Level.SEVERE, null, ex);
