@@ -15,8 +15,6 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.json.Json;
@@ -33,92 +31,86 @@ import javax.websocket.server.ServerEndpoint;
  *
  * @author bellahuang
  */
-@ServerEndpoint("/messages")
+@ServerEndpoint("/socket")
 @ApplicationScoped
 public class MessageServer {
 
     @Inject
     private MessageController messageCtrl;
 
+    DateFormat df = new SimpleDateFormat("EEE MMM dd H:m:s zzz yyyy");
+
     @OnMessage
     public void onMessage(String message, Session session) throws IOException {
+        messageCtrl = new MessageController();
 
         JsonObject json = Json.createReader(new StringReader(message)).readObject();
+        String output = "";
+        List<Session> sessions;
 
         if (!messageCtrl.containsSession(session)) {
             messageCtrl.addSession(session);
+            sessions = messageCtrl.getSessions();
+        } else {
+            sessions = messageCtrl.getSessions();
         }
 
         // { "getAll" : true } --> should respond with a JSON Array of the entire List of Messages
-        if (json.getBoolean("getAll")) {
-            JsonArray messages = messageCtrl.getAllJson();
-            for (Session s : messageCtrl.getSessions()) {
-                RemoteEndpoint.Basic basic = s.getBasicRemote();
-                basic.sendText(messages.toString());
-            }
+        if (json.containsKey("getAll") && json.getBoolean("getAll")) {
+            output = messageCtrl.getAllJson().toString();
+
         } // { "getById" : id } --> should respond with a single JSON Object as specified by the ID
         else if (json.containsKey("getById")) {
-            int id = json.getInt("getById");
-            JsonObject j = messageCtrl.getMessageById(id);
-            for (Session s : messageCtrl.getSessions()) {
-                RemoteEndpoint.Basic basic = s.getBasicRemote();
-                basic.sendText(j.toString());
-            }
+            output = messageCtrl.getMessageById(json.getInt("getById")).toString();
         } // { "getFromTo" : [ "startDate", "endDate" ] } --> should respond with a JSON Array of the Messages between startDate and endDate inclusive
         else if (json.containsKey("getFromTo")) {
-            String[] array = new String[2];
-            json.values().toArray(array);
-            String startDate = array[0];
-            String endDate = array[1];
-
-            List<Message> messages = messageCtrl.getMessagesByDate(startDate, endDate);
-            JsonArrayBuilder arr = Json.createArrayBuilder();
-            for (Message m : messages) {
-                arr.add(m.toJSON());
+            JsonArray arr = json.getJsonArray("getFromTo");
+            try {
+                Date startDate = df.parse(arr.getString(0));
+                Date endDate = df.parse(arr.getString(1));
+                List<Message> ms = messageCtrl.getMessagesByDate(startDate.toString(), endDate.toString());
+                JsonArrayBuilder j = Json.createArrayBuilder();
+                for (Message m : ms) {
+                    j.add(m.toJSON());
+                }
+                output = j.build().toString();
+            } catch (ParseException ex) {
+                output = Json.createObjectBuilder().add("error", "Error parsing dates: " + arr.toString()).build().toString();
             }
-            for(Session s : messageCtrl.getSessions()){
-                RemoteEndpoint.Basic basic = s.getBasicRemote();
-                basic.sendText(arr.toString());
-            }
-
         } // { "post" : { ... some Message as below without ID ... } } --> should add the Message to the system and echo back the Message to all connected systems
         else if (json.containsKey("post")) {
+            JsonObject post = json.getJsonObject("post");
             try {
-                JsonObject post = json.getJsonObject("post");
                 messageCtrl.addMessage(post);
-                for (Session s : messageCtrl.getSessions()) {
-                    RemoteEndpoint.Basic basic = s.getBasicRemote();
-                    basic.sendText(post.toString());
-                }
+                output = messageCtrl.getAllJson().toString();
             } catch (ParseException ex) {
-                Logger.getLogger(MessageServer.class.getName()).log(Level.SEVERE, null, ex);
+                output = Json.createObjectBuilder().add("error", "Error passing new post to addMessage: " + post.toString()).build().toString();
             }
+
         } // { "put" : { ... some Message as below with ID ... } } --> should edit the Message in the system that matches the given ID and echo back { "ok" : true }
         else if (json.containsKey("put")) {
+
+            JsonObject put = json.getJsonObject("put");
+            int id = put.getInt("id");
             try {
-                JsonObject put = json.getJsonObject("put");
-                int id = put.getInt("id");
                 messageCtrl.updateMessageById(id, put);
-                for (Session s : messageCtrl.getSessions()) {
-                    RemoteEndpoint.Basic basic = s.getBasicRemote();
-                    basic.sendText("{\"ok:\"true}");
-                }
+                output = Json.createObjectBuilder().add("ok", true).build().toString();
             } catch (ParseException ex) {
-                Logger.getLogger(MessageServer.class.getName()).log(Level.SEVERE, null, ex);
+                output = Json.createObjectBuilder().add("error", "Error updating message: " + put.toString()).build().toString();
             }
+
         } // { "delete" : id } --> should delete the Message in the system that matches the given ID and echo back { "ok" : true }
         else if (json.containsKey("delete")) {
             int id = json.getInt("delete");
             messageCtrl.deleteMessageById(id);
-            for (Session s : messageCtrl.getSessions()) {
-                RemoteEndpoint.Basic basic = s.getBasicRemote();
-                basic.sendText("{\"ok:\"true");
-            }
+            output = Json.createObjectBuilder().add("ok", true).build().toString();
         } else {
-            for (Session s : messageCtrl.getSessions()) {
-                RemoteEndpoint.Basic basic = s.getBasicRemote();
-                basic.sendText("{\"error\" : \"Some meaningful error message.\" }");
-            }
+            output = Json.createObjectBuilder().add("error", "Incorrect format").build().toString();
+        }
+
+        for (Session s : sessions) {
+            RemoteEndpoint.Basic basic = s.getBasicRemote();
+            basic.sendText(output);
         }
     }
 
